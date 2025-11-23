@@ -96,6 +96,8 @@ const decodePCMToAudioBuffer = (
 export const playAudioBuffer = async (audioBuffer: ArrayBuffer) => {
     // Initialize AudioContext with the correct sample rate for Gemini TTS (24kHz)
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    // CRITICAL: We create a new context here. We MUST close it when done,
+    // otherwise the browser will run out of audio contexts (limit is usually 6).
     const audioContext = new AudioContextClass({ sampleRate: 24000 });
     
     try {
@@ -105,8 +107,15 @@ export const playAudioBuffer = async (audioBuffer: ArrayBuffer) => {
         const source = audioContext.createBufferSource();
         source.buffer = decodedBuffer;
         source.connect(audioContext.destination);
+        
+        // Clean up context after playback finishes
+        source.onended = () => {
+          audioContext.close();
+        };
+
         source.start(0);
     } catch (e) {
         console.error("Audio playback error", e);
+        audioContext.close(); // Ensure close on error
     }
 }

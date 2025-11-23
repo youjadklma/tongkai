@@ -1,13 +1,38 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 
-// Initialize Gemini Client
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+let aiClient: GoogleGenAI | null = null;
+
+/**
+ * Safely gets the Gemini Client instance.
+ * Lazy initialization prevents the app from crashing on load if the API Key is missing.
+ */
+const getAiClient = (): GoogleGenAI => {
+  if (aiClient) return aiClient;
+
+  let apiKey = '';
+  try {
+    // Safely access process.env.API_KEY
+    if (typeof process !== 'undefined' && process.env) {
+      apiKey = process.env.API_KEY || '';
+    }
+  } catch (e) {
+    // Ignore ReferenceError if process is undefined
+    console.warn("Could not access process.env");
+  }
+
+  // Initialize with the key, or a placeholder to prevent constructor crash on load.
+  // The SDK requires a truthy string for apiKey in browser environment.
+  // If the key is invalid/missing, actual API calls will fail gracefully later.
+  aiClient = new GoogleGenAI({ apiKey: apiKey || 'MISSING_API_KEY_PLACEHOLDER' });
+  return aiClient;
+};
 
 /**
  * Fetches the Chinese definition for an English word using Gemini Flash.
  */
 export const getWordDefinition = async (word: string): Promise<string> => {
   try {
+    const ai = getAiClient();
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       // Improved prompt to be more direct and robust
@@ -30,6 +55,7 @@ export const getWordDefinition = async (word: string): Promise<string> => {
  */
 export const getWordAudio = async (text: string): Promise<ArrayBuffer | null> => {
   try {
+    const ai = getAiClient();
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
       contents: [{ parts: [{ text: text }] }],

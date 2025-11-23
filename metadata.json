@@ -1,0 +1,7 @@
+{
+  "name": "凯哥来听写 (Kaige Dictation)",
+  "description": "A cute and lively English dictation web app for Tong Qinyu, featuring daily practice, review modes, and Gemini-powered definitions and pronunciation.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

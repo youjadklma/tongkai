@@ -7,17 +7,18 @@ interface DictationGameProps {
   words: WordItem[];
   mode: GameMode;
   onRecordError: (id: string) => void;
+  onWordSuccess?: (id: string) => void;
   onComplete: (correctCount: number) => void;
   onExit: () => void;
 }
 
-const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onRecordError, onComplete, onExit }) => {
+const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onRecordError, onWordSuccess, onComplete, onExit }) => {
   // Game State
   const [queue, setQueue] = useState<WordItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [userInput, setUserInput] = useState('');
   const [gameState, setGameState] = useState<'PRELOAD' | 'PLAYING' | 'SUCCESS' | 'GAME_OVER'>('PRELOAD');
-  const [hintsLeft, setHintsLeft] = useState(3);
+  const [hintsLeft, setHintsLeft] = useState(1);
   const [feedback, setFeedback] = useState<'NONE' | 'SHAKE' | 'CORRECT'>('NONE');
   const [audioCache, setAudioCache] = useState<Record<string, ArrayBuffer>>({});
   
@@ -31,7 +32,7 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onRecordErro
     setQueue(shuffled);
     setCurrentIndex(0);
     setGameState('PRELOAD');
-    setHintsLeft(3); // Reset hints for the session
+    setHintsLeft(1); // Only 1 hint allowed now
     
     // Preload audio for the first word immediately, others in background
     if (shuffled.length > 0) {
@@ -119,6 +120,11 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onRecordErro
       // Correct
       setFeedback('CORRECT');
       
+      // Decrease error count if in review mode
+      if (mode === GameMode.REVIEW && onWordSuccess) {
+          onWordSuccess(currentWord.id);
+      }
+      
       setTimeout(() => {
         setFeedback('NONE');
         if (currentIndex < queue.length - 1) {
@@ -127,7 +133,7 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onRecordErro
           // Finished all words
           handleWin();
         }
-      }, 800);
+      }, 1500); // Increased delay to 1.5s so user can read the definition
     } else {
       // Wrong
       handleError(currentWord.id);
@@ -138,19 +144,8 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onRecordErro
     // Record error in persistent storage
     onRecordError(wordId);
 
-    if (mode === GameMode.DAILY) {
-      // Daily mode: Sudden death immediately
-      setGameState('GAME_OVER');
-    } else {
-      // Review mode
-      setFeedback('SHAKE');
-      setTimeout(() => setFeedback('NONE'), 500);
-      
-      // Strict rule logic
-      if (hintsLeft <= 0) {
-        setGameState('GAME_OVER');
-      }
-    }
+    // Sudden death for both Daily and Review modes now
+    setGameState('GAME_OVER');
   };
 
   const useHint = () => {
@@ -289,12 +284,21 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onRecordErro
           )}
         </div>
 
+        {/* Success Definition Feedback */}
+        {feedback === 'CORRECT' && (
+           <div className="mt-6 animate-fade-in-up">
+             <p className="text-2xl md:text-3xl font-cute font-bold text-green-500 drop-shadow-sm">
+               {queue[currentIndex].chinese}
+             </p>
+           </div>
+        )}
+
         {/* Hints (Review Mode Only) */}
-        {mode === GameMode.REVIEW && (
+        {mode === GameMode.REVIEW && feedback !== 'CORRECT' && (
            <div className="mt-8 flex justify-center">
              <button
                onClick={useHint}
-               disabled={hintsLeft === 0}
+               disabled={hintsLeft <= 0}
                className={`
                  flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition shadow-sm
                  ${hintsLeft > 0 ? 'bg-orange-50 text-orange-500 hover:bg-orange-100' : 'bg-gray-50 text-gray-300 cursor-not-allowed'}

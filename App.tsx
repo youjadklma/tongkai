@@ -10,6 +10,7 @@ const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>(AppScreen.WELCOME);
   const [wordBook, setWordBook] = useState<WordItem[]>([]);
   const [dailyWords, setDailyWords] = useState<WordItem[]>([]);
+  const [reviewWords, setReviewWords] = useState<WordItem[]>([]);
   
   // Load from LocalStorage on mount
   useEffect(() => {
@@ -46,8 +47,9 @@ const App: React.FC = () => {
 
     if (merge) {
         // Prevent duplicates based on english word, keep existing stats if present
-        // Explicitly cast the map entry to [string, WordItem] to ensure Map has correct types
-        const existingMap = new Map(wordBook.map(w => [w.english.toLowerCase(), w] as [string, WordItem]));
+        // Explicitly create Map with generic types to avoid inference issues
+        const existingMap = new Map<string, WordItem>();
+        wordBook.forEach(w => existingMap.set(w.english.toLowerCase(), w));
         
         const mergedWords = newWords.map(nw => {
             const existing = existingMap.get(nw.english.toLowerCase());
@@ -99,6 +101,20 @@ const App: React.FC = () => {
     localStorage.setItem('kaige_wordbook', JSON.stringify(sorted));
   };
 
+  // Decrement error count for review mode success
+  const handleWordSuccess = (wordId: string) => {
+    const updated = wordBook.map(w => {
+        if (w.id === wordId) {
+            // Decrease error count, but not below 0
+            return { ...w, errorCount: Math.max(0, (w.errorCount || 0) - 1) };
+        }
+        return w;
+    });
+    const sorted = sortWords(updated);
+    setWordBook(sorted);
+    localStorage.setItem('kaige_wordbook', JSON.stringify(sorted));
+  };
+
   // --- Navigation Handlers ---
   const goHome = () => setCurrentScreen(AppScreen.WELCOME);
   
@@ -109,6 +125,33 @@ const App: React.FC = () => {
           alert("单词本里还没有单词哦，先进行每日练习吧！");
           return;
       }
+
+      // Logic: Select 6 words total
+      // 1. Take top 4 words with most errors (already sorted)
+      // 2. Take 2 random words from the rest
+      let selected: WordItem[] = [];
+      const sortedBook = sortWords([...wordBook]);
+      const TARGET_COUNT = 6;
+
+      if (sortedBook.length <= TARGET_COUNT) {
+          selected = sortedBook;
+      } else {
+          // Top 4 error words
+          const topErrorWords = sortedBook.slice(0, 4);
+          
+          // Pool for random words (everything else)
+          const remainingPool = sortedBook.slice(4);
+          
+          // Shuffle remaining pool
+          const shuffledPool = remainingPool.sort(() => Math.random() - 0.5);
+          
+          // Take up to 2 random words
+          const randomWords = shuffledPool.slice(0, 2);
+          
+          selected = [...topErrorWords, ...randomWords];
+      }
+      
+      setReviewWords(selected);
       setCurrentScreen(AppScreen.REVIEW_GAME);
   };
   
@@ -177,9 +220,10 @@ const App: React.FC = () => {
       case AppScreen.REVIEW_GAME:
         return (
            <DictationGame 
-            words={wordBook} // Use all words for review (already sorted by error)
+            words={reviewWords} 
             mode={GameMode.REVIEW}
             onRecordError={handleRecordError}
+            onWordSuccess={handleWordSuccess}
             onComplete={() => {}}
             onExit={goHome}
           />

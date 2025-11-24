@@ -7,32 +7,39 @@ interface WelcomeProps {
 
 const Welcome: React.FC<WelcomeProps> = ({ onStart }) => {
   return (
-    <div className="flex flex-col items-center justify-center min-h-[80vh] p-6 text-center animate-fade-in">
-      <div className="mb-12 relative group cursor-default">
-        <div className="absolute -inset-4 bg-gradient-to-r from-cute-pink via-cute-purple to-cute-blue rounded-full blur-xl opacity-50 group-hover:opacity-80 transition duration-1000 animate-pulse"></div>
-        <h1 className="relative text-6xl md:text-8xl font-cute font-bold text-transparent bg-clip-text bg-gradient-to-br from-blue-500 to-purple-600 drop-shadow-sm transform group-hover:scale-110 transition duration-300">
-          童凯哥哥
+    <div className="flex flex-col items-center justify-center min-h-[75vh] p-6 text-center animate-fade-in relative">
+      
+      {/* Decorative Elements */}
+      <div className="absolute top-10 left-10 text-4xl animate-bounce delay-700 opacity-60">🦄</div>
+      <div className="absolute top-20 right-10 text-4xl animate-bounce delay-100 opacity-60">🍭</div>
+      <div className="absolute bottom-32 left-8 text-4xl animate-wiggle opacity-60">🎧</div>
+
+      <div className="mb-12 relative group cursor-default z-10">
+        <div className="absolute -inset-6 bg-gradient-to-r from-cute-pink via-white to-cute-blue rounded-full blur-2xl opacity-60 group-hover:opacity-90 transition duration-1000 animate-pulse"></div>
+        <h1 className="relative text-5xl md:text-7xl font-cute font-black text-transparent bg-clip-text bg-gradient-to-br from-purple-500 to-blue-500 drop-shadow-sm transform group-hover:scale-105 transition duration-300 tracking-wider">
+          凯哥来听写
         </h1>
-        <div className="absolute -right-4 -top-4 text-4xl animate-bounce delay-100">✨</div>
-        <div className="absolute -left-4 -bottom-2 text-4xl animate-bounce delay-700">🎈</div>
       </div>
 
-      <div className="bg-white p-6 rounded-3xl shadow-lg max-w-md relative mb-12 border-4 border-cute-blue wiggle mx-4">
-        <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-[10px] border-l-transparent border-r-[10px] border-r-transparent border-b-[15px] border-b-white"></div>
-        <h2 className="text-2xl font-cute font-bold text-text-main mb-2">
-          童琴予同学准备好今天的单词练习了吗？
+      <div className="bg-white/90 backdrop-blur-sm p-6 rounded-[2rem] shadow-xl max-w-md relative mb-12 border-b-8 border-cute-blue wiggle mx-4 z-10">
+        <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-[12px] border-l-transparent border-r-[12px] border-r-transparent border-b-[18px] border-b-white/90"></div>
+        <h2 className="text-xl md:text-2xl font-cute font-bold text-text-main mb-3 leading-relaxed">
+          童琴予同学<br/>准备好今天的单词练习了吗？
         </h2>
-        <p className="text-lg text-gray-600 font-cute">
-          让我们开始吧！
+        <p className="text-lg text-gray-500 font-cute">
+          让我们开始吧！加油！💪
         </p>
       </div>
 
       <button 
         onClick={onStart}
-        className="bg-gradient-to-r from-cute-blue to-blue-400 text-white font-bold py-4 px-12 rounded-full shadow-xl transform transition hover:scale-110 active:scale-95 flex items-center gap-3 text-2xl"
+        className="relative overflow-hidden bg-gradient-to-r from-cute-blue to-blue-400 text-white font-bold py-5 px-16 rounded-full shadow-xl transform transition hover:scale-105 active:scale-95 group z-10"
       >
-        <Play size={28} fill="currentColor" />
-        出发！
+        <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-20 transition duration-300"></div>
+        <div className="flex items-center gap-3 text-2xl">
+            <Play size={32} fill="currentColor" className="group-hover:translate-x-1 transition-transform" />
+            出发！
+        </div>
       </button>
     </div>
   );

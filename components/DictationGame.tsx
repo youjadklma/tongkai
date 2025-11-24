@@ -1,16 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { WordItem, GameMode } from '../types';
 import { getWordAudio, playAudioBuffer } from '../services/geminiService';
-import { Volume2, XCircle, CheckCircle, Lightbulb, RefreshCw } from 'lucide-react';
+import { Volume2, XCircle, CheckCircle, Lightbulb, RefreshCw, Home } from 'lucide-react';
 
 interface DictationGameProps {
   words: WordItem[];
   mode: GameMode;
+  onRecordError: (id: string) => void;
   onComplete: (correctCount: number) => void;
   onExit: () => void;
 }
 
-const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onComplete, onExit }) => {
+const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onRecordError, onComplete, onExit }) => {
   // Game State
   const [queue, setQueue] = useState<WordItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -40,9 +41,7 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onComplete, 
       // Background load others
       shuffled.slice(1).forEach(w => loadAudio(w.english));
     } else {
-        // No words to review
         onExit(); 
-        alert("没有单词可以复习哦！");
     }
   }, [words]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -112,7 +111,8 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onComplete, 
   };
 
   const submitWord = () => {
-    const target = queue[currentIndex].english.toLowerCase().trim();
+    const currentWord = queue[currentIndex];
+    const target = currentWord.english.toLowerCase().trim();
     const input = userInput.toLowerCase().trim();
 
     if (input === target) {
@@ -130,11 +130,14 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onComplete, 
       }, 800);
     } else {
       // Wrong
-      handleError();
+      handleError(currentWord.id);
     }
   };
 
-  const handleError = () => {
+  const handleError = (wordId: string) => {
+    // Record error in persistent storage
+    onRecordError(wordId);
+
     if (mode === GameMode.DAILY) {
       // Daily mode: Sudden death immediately
       setGameState('GAME_OVER');
@@ -143,9 +146,7 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onComplete, 
       setFeedback('SHAKE');
       setTimeout(() => setFeedback('NONE'), 500);
       
-      // Strict rule: if hints used up and wrong -> game over? 
-      // User prompt: "Chance used up then wrong -> exit"
-      // If hintsLeft == 0, and they got it wrong, game over.
+      // Strict rule logic
       if (hintsLeft <= 0) {
         setGameState('GAME_OVER');
       }
@@ -173,7 +174,6 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onComplete, 
 
   const handleWin = () => {
     setGameState('SUCCESS');
-    // Words are already saved in App.tsx before game start for Daily Mode
   };
 
   // Renderers
@@ -188,68 +188,84 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onComplete, 
 
   if (gameState === 'GAME_OVER') {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[50vh] animate-bounce">
-        <XCircle className="text-red-400 mb-6" size={80} />
-        <h2 className="text-3xl font-cute font-bold text-text-main mb-4">哎呀！出错了</h2>
-        <p className="text-gray-500 mb-8">别灰心，重新开始挑战吧！</p>
-        <button 
-          onClick={onExit}
-          className="bg-cute-blue text-white font-bold py-3 px-8 rounded-full shadow-lg hover:scale-105 transition"
-        >
-          重新开始
-        </button>
+      <div className="flex flex-col items-center justify-center min-h-[60vh] animate-bounce px-6">
+        <div className="bg-white p-8 rounded-[3rem] shadow-xl text-center border-4 border-red-100 max-w-sm w-full">
+            <XCircle className="text-red-400 mx-auto mb-4" size={80} />
+            <h2 className="text-3xl font-cute font-bold text-text-main mb-2">哎呀！出错了</h2>
+            <p className="text-gray-500 mb-6 font-medium">
+               正确拼写是: <span className="text-cute-blue font-bold text-xl block mt-1">{queue[currentIndex].english}</span>
+               <span className="text-sm text-gray-400">({queue[currentIndex].chinese})</span>
+            </p>
+            <p className="text-xs text-red-300 mb-8 bg-red-50 py-1 px-3 rounded-full inline-block">已记录到错题本</p>
+            
+            <button 
+            onClick={onExit}
+            className="w-full bg-gradient-to-r from-cute-blue to-blue-400 text-white font-bold py-4 px-8 rounded-2xl shadow-lg hover:scale-105 active:scale-95 transition flex items-center justify-center gap-2"
+            >
+            <RefreshCw size={20} />
+            重新开始
+            </button>
+        </div>
       </div>
     );
   }
 
   if (gameState === 'SUCCESS') {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[50vh] animate-fade-in">
-        <div className="text-6xl mb-4">🎉</div>
-        <h2 className="text-3xl font-cute font-bold text-text-main mb-4">太棒了！</h2>
-        <p className="text-gray-500 mb-8">
-            {mode === GameMode.DAILY ? "今天的任务完成了！单词已保存！" : "复习挑战成功！"}
-        </p>
-        <button 
-          onClick={() => { onComplete(queue.length); onExit(); }}
-          className="bg-green-400 text-white font-bold py-3 px-8 rounded-full shadow-lg hover:scale-105 transition"
-        >
-          回到主页
-        </button>
+      <div className="flex flex-col items-center justify-center min-h-[60vh] animate-fade-in px-6">
+        <div className="bg-white p-8 rounded-[3rem] shadow-xl text-center border-4 border-green-100 max-w-sm w-full relative overflow-hidden">
+             {/* Confetti effect placeholder */}
+            <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-red-400 via-yellow-400 to-blue-400"></div>
+
+            <div className="text-7xl mb-4 animate-wiggle inline-block">🎉</div>
+            <h2 className="text-3xl font-cute font-bold text-text-main mb-4">太棒了！</h2>
+            <p className="text-gray-500 mb-8 text-lg">
+                {mode === GameMode.DAILY ? "今天的任务全部完成！" : "复习挑战成功！"}
+            </p>
+            <button 
+            onClick={() => { onComplete(queue.length); onExit(); }}
+            className="w-full bg-gradient-to-r from-green-400 to-emerald-500 text-white font-bold py-4 px-8 rounded-2xl shadow-lg hover:scale-105 active:scale-95 transition flex items-center justify-center gap-2"
+            >
+            <Home size={20} />
+            回到主页
+            </button>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="w-full max-w-xl mx-auto p-4 flex flex-col items-center">
+      {/* Header Info */}
+      <div className="flex justify-between w-full items-center mb-6 px-4">
+         <span className="text-sm font-bold bg-white px-3 py-1 rounded-full shadow-sm text-gray-400">
+             {mode === GameMode.DAILY ? "📅 每日听写" : "🔄 复习模式"}
+         </span>
+         <span className="text-sm font-bold bg-white px-3 py-1 rounded-full shadow-sm text-cute-purple">
+             {currentIndex + 1} / {queue.length}
+         </span>
+      </div>
+
       {/* Progress Bar */}
-      <div className="w-full bg-gray-200 rounded-full h-4 mb-8 overflow-hidden border-2 border-white shadow-inner">
+      <div className="w-full bg-white rounded-full h-3 mb-8 overflow-hidden shadow-inner mx-4">
         <div 
-          className="bg-cute-pink h-full transition-all duration-500"
+          className="bg-gradient-to-r from-cute-pink to-cute-purple h-full transition-all duration-500 ease-out"
           style={{ width: `${((currentIndex) / queue.length) * 100}%` }}
         ></div>
       </div>
 
       {/* Main Card */}
-      <div className="bg-white p-8 rounded-[40px] shadow-xl w-full text-center border-4 border-cute-blue relative">
+      <div className="bg-white p-8 rounded-[3rem] shadow-xl w-full text-center border-b-8 border-cute-blue relative mx-4">
         
-        {/* Mode Indicator */}
-        <div className="absolute top-4 right-6 text-sm font-bold text-gray-300">
-           {mode === GameMode.DAILY ? "每日听写" : "复习模式"}
-        </div>
-
-        {/* Word Counter */}
-        <div className="text-gray-400 font-bold mb-6">
-           单词 {currentIndex + 1} / {queue.length}
-        </div>
-
         {/* Audio Button (Big) */}
         <button 
           onClick={playCurrentWord}
-          className="bg-cute-yellow p-6 rounded-full mb-8 shadow-md hover:scale-110 active:scale-95 transition-transform group"
+          className="bg-cute-yellow p-8 rounded-full mb-8 shadow-md hover:scale-110 active:scale-95 transition-transform group ring-4 ring-yellow-100"
         >
-          <Volume2 size={48} className="text-orange-400 group-hover:text-orange-500" />
+          <Volume2 size={56} className="text-orange-400 group-hover:text-orange-600" />
         </button>
+
+        <p className="text-gray-400 text-sm mb-2 font-bold">请输入听到的单词:</p>
 
         {/* Input Field */}
         <div className={`relative transition-transform ${feedback === 'SHAKE' ? 'animate-[wiggle_0.3s_ease-in-out]' : ''}`}>
@@ -260,15 +276,16 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onComplete, 
             onChange={handleChange}
             onKeyDown={handleKeyDown}
             className={`
-              w-full text-center text-4xl font-bold font-cute py-4 border-b-4 outline-none bg-transparent
-              ${feedback === 'CORRECT' ? 'border-green-400 text-green-500' : 'border-gray-200 text-text-main focus:border-cute-blue'}
+              w-full text-center text-5xl font-bold font-cute py-4 border-b-4 outline-none bg-transparent tracking-wider
+              ${feedback === 'CORRECT' ? 'border-green-400 text-green-500' : 'border-gray-100 text-text-main focus:border-cute-blue'}
+              transition-colors duration-300
             `}
-            placeholder="听写单词..."
+            placeholder=""
             autoComplete="off"
             autoFocus
           />
           {feedback === 'CORRECT' && (
-             <CheckCircle className="absolute right-2 top-1/2 -translate-y-1/2 text-green-500 animate-bounce" size={32} />
+             <CheckCircle className="absolute right-0 top-1/2 -translate-y-1/2 text-green-500 animate-bounce" size={40} />
           )}
         </div>
 
@@ -279,8 +296,8 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onComplete, 
                onClick={useHint}
                disabled={hintsLeft === 0}
                className={`
-                 flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition
-                 ${hintsLeft > 0 ? 'bg-orange-100 text-orange-500 hover:bg-orange-200' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}
+                 flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition shadow-sm
+                 ${hintsLeft > 0 ? 'bg-orange-50 text-orange-500 hover:bg-orange-100' : 'bg-gray-50 text-gray-300 cursor-not-allowed'}
                `}
              >
                <Lightbulb size={18} />
@@ -289,10 +306,6 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onComplete, 
            </div>
         )}
 
-      </div>
-
-      <div className="mt-8 text-gray-400 text-sm">
-        按 Enter 提交
       </div>
     </div>
   );

@@ -42,7 +42,8 @@ const DailyInput: React.FC<DailyInputProps> = ({ onStartDictation, onBack }) => 
         id: uuidv4(),
         english: pair.english.trim(),
         chinese: pair.chinese.trim(),
-        dateAdded: Date.now()
+        dateAdded: Date.now(),
+        errorCount: 0 // Initialize with 0 errors
       }));
 
       // Simulate a small delay for better UX feel
@@ -58,7 +59,7 @@ const DailyInput: React.FC<DailyInputProps> = ({ onStartDictation, onBack }) => 
 
   return (
     <div className="w-full max-w-4xl mx-auto p-4 animate-fade-in pb-20">
-      <div className="bg-white rounded-3xl shadow-xl p-6 border-4 border-cute-pink">
+      <div className="bg-white rounded-3xl shadow-xl p-6 border-b-8 border-cute-pink">
         <h2 className="text-2xl font-cute font-bold text-center text-text-main mb-2">
           📝 输入今天的6个单词
         </h2>
@@ -66,8 +67,8 @@ const DailyInput: React.FC<DailyInputProps> = ({ onStartDictation, onBack }) => 
 
         <div className="grid grid-cols-1 gap-4 mb-8">
           {inputs.map((pair, idx) => (
-            <div key={idx} className="flex flex-col md:flex-row gap-2 items-center bg-gray-50 p-3 rounded-2xl border border-gray-100 hover:border-cute-blue transition-colors">
-               <span className="w-8 h-8 flex items-center justify-center bg-cute-purple text-white font-bold rounded-full shadow-sm shrink-0">
+            <div key={idx} className="flex flex-col md:flex-row gap-2 items-center bg-gray-50 p-3 rounded-2xl border border-gray-100 hover:border-cute-blue transition-colors group">
+               <span className="w-8 h-8 flex items-center justify-center bg-cute-purple text-white font-bold rounded-full shadow-sm shrink-0 group-hover:bg-cute-blue transition-colors">
                  {idx + 1}
                </span>
                
@@ -76,7 +77,7 @@ const DailyInput: React.FC<DailyInputProps> = ({ onStartDictation, onBack }) => 
                     type="text"
                     value={pair.english}
                     onChange={(e) => handleInputChange(idx, 'english', e.target.value)}
-                    className="w-full px-4 py-2 rounded-xl border-2 border-gray-200 focus:border-cute-blue focus:ring-2 focus:ring-cute-blue/20 outline-none transition text-lg font-bold text-text-main placeholder-gray-300"
+                    className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-cute-blue focus:ring-4 focus:ring-cute-blue/10 outline-none transition text-xl font-bold text-text-main placeholder-gray-300"
                     placeholder="English Word (英文)"
                     disabled={loading}
                     autoComplete="off"
@@ -88,7 +89,7 @@ const DailyInput: React.FC<DailyInputProps> = ({ onStartDictation, onBack }) => 
                     type="text"
                     value={pair.chinese}
                     onChange={(e) => handleInputChange(idx, 'chinese', e.target.value)}
-                    className="w-full px-4 py-2 rounded-xl border-2 border-gray-200 focus:border-cute-pink focus:ring-2 focus:ring-cute-pink/20 outline-none transition text-lg font-medium text-gray-600 placeholder-gray-300"
+                    className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-cute-pink focus:ring-4 focus:ring-cute-pink/10 outline-none transition text-lg font-medium text-gray-600 placeholder-gray-300"
                     placeholder="中文释义"
                     disabled={loading}
                     autoComplete="off"
@@ -99,15 +100,15 @@ const DailyInput: React.FC<DailyInputProps> = ({ onStartDictation, onBack }) => 
         </div>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-100 text-red-500 rounded-xl text-center font-bold animate-bounce">
+          <div className="mb-4 p-3 bg-red-100 text-red-500 rounded-xl text-center font-bold animate-bounce text-sm">
             {error}
           </div>
         )}
 
-        <div className="flex justify-between items-center">
+        <div className="flex justify-between items-center px-2">
           <button 
             onClick={onBack}
-            className="text-gray-400 font-bold hover:text-gray-600 px-4 py-2"
+            className="text-gray-400 font-bold hover:text-gray-600 px-4 py-2 hover:bg-gray-100 rounded-xl transition"
           >
             返回
           </button>
@@ -117,7 +118,7 @@ const DailyInput: React.FC<DailyInputProps> = ({ onStartDictation, onBack }) => 
             disabled={loading}
             className={`
               flex items-center gap-2 bg-gradient-to-r from-cute-pink to-pink-400 text-white font-bold py-3 px-8 rounded-full shadow-md text-lg
-              ${loading ? 'opacity-70 cursor-not-allowed' : 'hover:scale-105 active:scale-95 transition-transform'}
+              ${loading ? 'opacity-70 cursor-not-allowed' : 'hover:scale-105 active:scale-95 transition-transform hover:shadow-lg'}
             `}
           >
             {loading ? (

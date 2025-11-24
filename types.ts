@@ -3,6 +3,7 @@ export interface WordItem {
   english: string;
   chinese: string;
   dateAdded: number; // timestamp
+  errorCount: number; // Number of times misspelled
 }
 
 export enum AppScreen {

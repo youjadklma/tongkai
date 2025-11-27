@@ -228,5 +228,11 @@ export const CORE_DICTIONARY: Record<string, string> = {
   "thirty": "三十", "forty": "四十", "fifty": "五十", "sixty": "六十", "seventy": "七十", "eighty": "八十", "ninety": "九十",
   "hundred": "百", "thousand": "千", "million": "百万", "billion": "十亿",
   "first": "第一", "second_ord": "第二", "third": "第三", "fourth": "第四", "fifth": "第五",
-  "half": "一半", "quarter": "四分之一/一刻钟", "zero": "零"
+  "half": "一半", "quarter": "四分之一/一刻钟", "zero": "零",
+
+  // --- Alphabet (Letters) ---
+  "letter_a": "字母A", "letter_b": "字母B", "letter_c": "字母C", "letter_d": "字母D", "letter_e": "字母E", "letter_f": "字母F", "letter_g": "字母G",
+  "letter_h": "字母H", "letter_i": "字母I", "letter_j": "字母J", "letter_k": "字母K", "letter_l": "字母L", "letter_m": "字母M", "letter_n": "字母N",
+  "letter_o": "字母O", "letter_p": "字母P", "letter_q": "字母Q", "letter_r": "字母R", "letter_s": "字母S", "letter_t": "字母T", "letter_u": "字母U",
+  "letter_v": "字母V", "letter_w": "字母W", "letter_x": "字母X", "letter_y": "字母Y", "letter_z": "字母Z"
 };

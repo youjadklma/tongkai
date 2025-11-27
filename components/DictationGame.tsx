@@ -93,10 +93,17 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onRecordErro
   const speakLetter = (char: string) => {
     try {
       if (typeof window !== 'undefined' && window.speechSynthesis) {
+        // Cancel any pending speech (esp. previous letters) to keep up with typing speed
         window.speechSynthesis.cancel();
-        const msg = new SpeechSynthesisUtterance(char.toLowerCase());
+        
+        // Use Uppercase for clearer letter name pronunciation (e.g., "A" vs "ah")
+        const msg = new SpeechSynthesisUtterance(char.toUpperCase());
         msg.lang = 'en-US';
-        msg.rate = 1.2;
+        // Increase rate for snappy feedback
+        msg.rate = 1.5; 
+        // Slightly higher pitch for a "cuter", more distinct sound
+        msg.pitch = 1.2;
+        
         window.speechSynthesis.speak(msg);
       }
     } catch (e) {

@@ -1,6 +1,7 @@
-import { GoogleGenAI, Modality } from "@google/genai";
+import { GoogleGenAI, Modality, GenerateContentResponse } from "@google/genai";
 
 let aiClient: GoogleGenAI | null = null;
+const API_TIMEOUT_MS = 3000; // 3 seconds timeout for Chinese intranet environments
 
 /**
  * Safely gets the Gemini Client instance.
@@ -10,21 +11,52 @@ const getAiClient = (): GoogleGenAI => {
   if (aiClient) return aiClient;
 
   let apiKey = '';
+  let baseUrl = '';
+
   try {
-    // Safely access process.env.API_KEY
+    // Safely access process.env
     if (typeof process !== 'undefined' && process.env) {
       apiKey = process.env.API_KEY || '';
+      // Support custom proxy URL for intranet access
+      baseUrl = process.env.GEMINI_API_BASE_URL || ''; 
     }
   } catch (e) {
-    // Ignore ReferenceError if process is undefined
     console.warn("Could not access process.env");
   }
 
-  // Initialize with the key, or a placeholder to prevent constructor crash on load.
-  // The SDK requires a truthy string for apiKey in browser environment.
-  // If the key is invalid/missing, actual API calls will fail gracefully later.
-  aiClient = new GoogleGenAI({ apiKey: apiKey || 'MISSING_API_KEY_PLACEHOLDER' });
+  // Initialize with the key.
+  // We allow passing a baseUrl if the user has a proxy setup.
+  const options: any = { 
+    apiKey: apiKey || 'MISSING_API_KEY_PLACEHOLDER' 
+  };
+  
+  if (baseUrl) {
+      options.baseUrl = baseUrl;
+  }
+
+  aiClient = new GoogleGenAI(options);
   return aiClient;
+};
+
+/**
+ * Utility to wrap promises with a timeout
+ */
+const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            reject(new Error(`Request timed out after ${ms}ms`));
+        }, ms);
+
+        promise
+            .then(value => {
+                clearTimeout(timer);
+                resolve(value);
+            })
+            .catch(reason => {
+                clearTimeout(timer);
+                reject(reason);
+            });
+    });
 };
 
 /**
@@ -33,19 +65,21 @@ const getAiClient = (): GoogleGenAI => {
 export const getWordDefinition = async (word: string): Promise<string> => {
   try {
     const ai = getAiClient();
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      // Improved prompt to be more direct and robust
-      contents: `You are a dictionary. Translate the English word "${word}" to Chinese. Respond with ONLY the Chinese definition. Do not include pinyin, example sentences, or any introductory text.`,
-      config: {
-        maxOutputTokens: 100, // Increased to prevent truncation
-        temperature: 0.1,    // Lower temperature for consistent answers
-      }
-    });
+    const response = await withTimeout(
+        ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: `You are a dictionary. Translate the English word "${word}" to Chinese. Respond with ONLY the Chinese definition. Do not include pinyin, example sentences, or any introductory text.`,
+        config: {
+            maxOutputTokens: 100,
+            temperature: 0.1,
+        }
+        }),
+        API_TIMEOUT_MS
+    ) as GenerateContentResponse;
     return response.text?.trim() || "暂无释义";
   } catch (error) {
-    console.error("Definition fetch error:", error);
-    return "查询失败";
+    console.warn("Definition fetch failed (Offline mode active):", error);
+    return "查询失败(离线)";
   }
 };
 
@@ -56,18 +90,22 @@ export const getWordDefinition = async (word: string): Promise<string> => {
 export const getWordAudio = async (text: string): Promise<ArrayBuffer | null> => {
   try {
     const ai = getAiClient();
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text: text }] }],
-      config: {
-        responseModalities: [Modality.AUDIO],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: 'Kore' }, // Clear female voice suitable for teaching
-          },
+    
+    const response = await withTimeout(
+        ai.models.generateContent({
+        model: "gemini-2.5-flash-preview-tts",
+        contents: [{ parts: [{ text: text }] }],
+        config: {
+            responseModalities: [Modality.AUDIO],
+            speechConfig: {
+            voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: 'Kore' }, 
+            },
+            },
         },
-      },
-    });
+        }),
+        API_TIMEOUT_MS
+    ) as GenerateContentResponse;
 
     const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
     if (!base64Audio) return null;
@@ -81,7 +119,10 @@ export const getWordAudio = async (text: string): Promise<ArrayBuffer | null> =>
     }
     return bytes.buffer;
   } catch (error) {
-    console.error("TTS error:", error);
+    // This catch block is crucial for the Intranet scenario.
+    // If timeout or network error occurs, we return null immediately.
+    // The calling component will see 'null' and fallback to window.speechSynthesis.
+    console.warn("TTS fetch failed (Offline mode active):", error);
     return null;
   }
 };
@@ -96,7 +137,6 @@ const decodePCMToAudioBuffer = (
   sampleRate: number = 24000,
   numChannels: number = 1
 ): AudioBuffer => {
-  // Ensure we can create an Int16Array (length must be multiple of 2)
   if (rawBuffer.byteLength % 2 !== 0) {
      rawBuffer = rawBuffer.slice(0, rawBuffer.byteLength - 1);
   }
@@ -108,7 +148,6 @@ const decodePCMToAudioBuffer = (
   for (let channel = 0; channel < numChannels; channel++) {
     const channelData = audioBuffer.getChannelData(channel);
     for (let i = 0; i < frameCount; i++) {
-      // Normalize Int16 to Float32 (-1.0 to 1.0)
       channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
     }
   }
@@ -117,24 +156,18 @@ const decodePCMToAudioBuffer = (
 
 /**
  * Helper to play audio buffer.
- * Manually decodes raw PCM data since it lacks standard file headers.
  */
 export const playAudioBuffer = async (audioBuffer: ArrayBuffer) => {
-    // Initialize AudioContext with the correct sample rate for Gemini TTS (24kHz)
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-    // CRITICAL: We create a new context here. We MUST close it when done,
-    // otherwise the browser will run out of audio contexts (limit is usually 6).
     const audioContext = new AudioContextClass({ sampleRate: 24000 });
     
     try {
-        // Manually decode PCM instead of using decodeAudioData (which fails for raw PCM)
         const decodedBuffer = decodePCMToAudioBuffer(audioBuffer, audioContext);
         
         const source = audioContext.createBufferSource();
         source.buffer = decodedBuffer;
         source.connect(audioContext.destination);
         
-        // Clean up context after playback finishes
         source.onended = () => {
           audioContext.close();
         };
@@ -142,6 +175,6 @@ export const playAudioBuffer = async (audioBuffer: ArrayBuffer) => {
         source.start(0);
     } catch (e) {
         console.error("Audio playback error", e);
-        audioContext.close(); // Ensure close on error
+        audioContext.close();
     }
 }

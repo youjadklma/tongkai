@@ -23,3 +23,8 @@ export interface GameConfig {
   words: WordItem[];
   mode: GameMode;
 }
+
+// Common props for components that need audio
+export interface AudioPlayerProps {
+  onPlayAudio: (word: string) => void;
+}

@@ -1,27 +1,16 @@
 import React, { useState } from 'react';
 import { WordItem } from '../types';
 import { Volume2, ArrowLeft, BookOpen, Trash2, AlertCircle } from 'lucide-react';
-import { getWordAudio, playAudioBuffer } from '../services/geminiService';
 
 interface WordBookProps {
   words: WordItem[];
   onBack: () => void;
   onDelete: (id: string) => void;
+  onPlayAudio: (word: string) => void;
 }
 
-const WordBook: React.FC<WordBookProps> = ({ words, onBack, onDelete }) => {
+const WordBook: React.FC<WordBookProps> = ({ words, onBack, onDelete, onPlayAudio }) => {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-
-  const playWord = async (word: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const buffer = await getWordAudio(word);
-    if (buffer) {
-        playAudioBuffer(buffer);
-    } else {
-        const msg = new SpeechSynthesisUtterance(word);
-        window.speechSynthesis.speak(msg);
-    }
-  };
 
   const handleDeleteClick = (id: string, e: React.MouseEvent) => {
       e.stopPropagation();
@@ -92,7 +81,7 @@ const WordBook: React.FC<WordBookProps> = ({ words, onBack, onDelete }) => {
                   </div>
                   
                   <button 
-                    onClick={(e) => playWord(word.english, e)}
+                    onClick={(e) => { e.stopPropagation(); onPlayAudio(word.english); }}
                     className="bg-cute-blue/10 p-3 rounded-full hover:bg-cute-blue group-hover:bg-cute-blue/20 transition-colors"
                   >
                      <Volume2 size={24} className="text-cute-blue group-hover:scale-110 transition-transform" />

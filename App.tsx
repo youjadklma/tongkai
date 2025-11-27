@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { WordItem, AppScreen, GameMode } from './types';
 import Welcome from './components/Welcome';
 import DailyInput from './components/DailyInput';
@@ -12,69 +12,131 @@ const App: React.FC = () => {
   const [dailyWords, setDailyWords] = useState<WordItem[]>([]);
   const [reviewWords, setReviewWords] = useState<WordItem[]>([]);
   
+  // --- Audio System for Chinese Intranet ---
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioCacheRef = useRef<Map<string, AudioBuffer>>(new Map());
+
+  // Initialize Audio Context (lazily)
+  const getAudioContext = () => {
+    if (!audioContextRef.current) {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      audioContextRef.current = new AudioContextClass();
+    }
+    if (audioContextRef.current.state === 'suspended') {
+      audioContextRef.current.resume();
+    }
+    return audioContextRef.current;
+  };
+
+  // Robust Audio Player: Youdao -> Baidu -> Browser TTS
+  const playAudio = async (word: string) => {
+    // 1. Try Browser Cache/AudioContext first
+    if (audioCacheRef.current.has(word)) {
+      playBuffer(audioCacheRef.current.get(word)!);
+      return;
+    }
+
+    try {
+      // 2. Try Youdao Dictionary API (Best for China)
+      // type=2 is US English
+      const url = `https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(word)}&type=2`;
+      await playUrlAudio(url, word);
+    } catch (e) {
+      console.warn("Youdao audio failed, trying backup...");
+      try {
+        // 3. Try Baidu TTS
+        const baiduUrl = `https://fanyi.baidu.com/gettts?lan=en&text=${encodeURIComponent(word)}&spd=3&source=web`;
+        await playUrlAudio(baiduUrl, word);
+      } catch (e2) {
+        console.warn("Web audio failed, using browser TTS fallback");
+        // 4. Fallback to Browser Speech Synthesis
+        const msg = new SpeechSynthesisUtterance(word);
+        msg.lang = 'en-US';
+        msg.rate = 0.9;
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(msg);
+      }
+    }
+  };
+
+  // Helper: Play from URL and cache the buffer
+  const playUrlAudio = async (url: string, word: string) => {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("Network response not ok");
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const ctx = getAudioContext();
+    const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+    
+    // Cache it
+    audioCacheRef.current.set(word, audioBuffer);
+    playBuffer(audioBuffer);
+  };
+
+  // Helper: Play an AudioBuffer
+  const playBuffer = (buffer: AudioBuffer) => {
+    const ctx = getAudioContext();
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    source.start(0);
+  };
+
   // Load from LocalStorage on mount
   useEffect(() => {
     const saved = localStorage.getItem('kaige_wordbook');
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // Ensure legacy data has errorCount
         const sanitized = parsed.map((w: any) => ({
             ...w,
             errorCount: w.errorCount || 0
         }));
-        // Initial sort
         setWordBook(sortWords(sanitized));
       } catch (e) {
         console.error("Failed to load wordbook");
       }
     }
+    
+    // Cleanup audio context
+    return () => {
+      audioContextRef.current?.close();
+    };
   }, []);
 
-  // Helper to sort words: High errors first, then by date added (newest first)
   const sortWords = (words: WordItem[]) => {
     return [...words].sort((a, b) => {
       if (b.errorCount !== a.errorCount) {
-        return b.errorCount - a.errorCount; // Higher errors first
+        return b.errorCount - a.errorCount; 
       }
-      return b.dateAdded - a.dateAdded; // Newer words first
+      return b.dateAdded - a.dateAdded; 
     });
   };
 
-  // Save to LocalStorage helper
   const saveToBook = (newWords: WordItem[], merge: boolean = true) => {
     let updatedBook: WordItem[];
-
     if (merge) {
-        // Prevent duplicates based on english word, keep existing stats if present
-        // Explicitly create Map with generic types to avoid inference issues
         const existingMap = new Map<string, WordItem>();
         wordBook.forEach(w => existingMap.set(w.english.toLowerCase(), w));
         
         const mergedWords = newWords.map(nw => {
             const existing = existingMap.get(nw.english.toLowerCase());
             if (existing) {
-                // Keep the old ID and error count, just update definition/date if needed
                 return { ...existing, chinese: nw.chinese, dateAdded: Date.now() }; 
             }
             return nw;
         });
 
-        // Add completely new words that weren't in the book
         const currentEnglishSet = new Set(mergedWords.map(w => w.english.toLowerCase()));
         const remainingOldWords = wordBook.filter(w => !currentEnglishSet.has(w.english.toLowerCase()));
-        
         updatedBook = [...mergedWords, ...remainingOldWords];
     } else {
         updatedBook = newWords;
     }
-
     const sorted = sortWords(updatedBook);
     setWordBook(sorted);
     localStorage.setItem('kaige_wordbook', JSON.stringify(sorted));
   };
-
-  // --- Actions ---
 
   const deleteWord = (id: string) => {
     const updated = wordBook.filter(w => w.id !== id);
@@ -83,29 +145,21 @@ const App: React.FC = () => {
   };
 
   const handleRecordError = (wordId: string) => {
-    // Find the word in the book (or daily list) and increment error
     const updated = wordBook.map(w => {
       if (w.id === wordId) {
         return { ...w, errorCount: (w.errorCount || 0) + 1 };
       }
       return w;
     });
-    
-    // We also need to update dailyWords if it's happening during daily dictation
-    // so the state stays consistent in the UI, though DictationGame uses its own queue.
     setDailyWords(prev => prev.map(w => w.id === wordId ? { ...w, errorCount: (w.errorCount || 0) + 1 } : w));
-
-    // Save and sort immediately
     const sorted = sortWords(updated);
     setWordBook(sorted);
     localStorage.setItem('kaige_wordbook', JSON.stringify(sorted));
   };
 
-  // Decrement error count for review mode success
   const handleWordSuccess = (wordId: string) => {
     const updated = wordBook.map(w => {
         if (w.id === wordId) {
-            // Decrease error count, but not below 0
             return { ...w, errorCount: Math.max(0, (w.errorCount || 0) - 1) };
         }
         return w;
@@ -115,65 +169,42 @@ const App: React.FC = () => {
     localStorage.setItem('kaige_wordbook', JSON.stringify(sorted));
   };
 
-  // --- Navigation Handlers ---
   const goHome = () => setCurrentScreen(AppScreen.WELCOME);
-  
   const startDaily = () => setCurrentScreen(AppScreen.DAILY_INPUT);
-  
   const startReview = () => {
       if (wordBook.length === 0) {
           alert("单词本里还没有单词哦，先进行每日练习吧！");
           return;
       }
-
-      // Logic: Select 6 words total
-      // 1. Take top 4 words with most errors (already sorted)
-      // 2. Take 2 random words from the rest
       let selected: WordItem[] = [];
       const sortedBook = sortWords([...wordBook]);
       const TARGET_COUNT = 6;
-
       if (sortedBook.length <= TARGET_COUNT) {
           selected = sortedBook;
       } else {
-          // Top 4 error words
           const topErrorWords = sortedBook.slice(0, 4);
-          
-          // Pool for random words (everything else)
           const remainingPool = sortedBook.slice(4);
-          
-          // Shuffle remaining pool
           const shuffledPool = remainingPool.sort(() => Math.random() - 0.5);
-          
-          // Take up to 2 random words
           const randomWords = shuffledPool.slice(0, 2);
-          
           selected = [...topErrorWords, ...randomWords];
       }
-      
       setReviewWords(selected);
       setCurrentScreen(AppScreen.REVIEW_GAME);
   };
-  
   const openBook = () => setCurrentScreen(AppScreen.WORD_BOOK);
 
-  // Called when Daily Input is finished
   const handleDailyWordsReady = (words: WordItem[]) => {
     setDailyWords(words);
-    // Save to wordbook immediately
     saveToBook(words, true);
     setCurrentScreen(AppScreen.DICTATION_GAME);
   };
 
-  // Render Logic
   const renderContent = () => {
     switch (currentScreen) {
       case AppScreen.WELCOME:
         return (
           <div className="flex flex-col h-full">
              <Welcome onStart={startDaily} />
-             
-             {/* Main Menu for other actions */}
              <div className="fixed bottom-10 left-0 right-0 flex justify-center gap-8 animate-fade-in-up px-4">
                 <button 
                   onClick={startReview}
@@ -197,7 +228,6 @@ const App: React.FC = () => {
              </div>
           </div>
         );
-      
       case AppScreen.DAILY_INPUT:
         return (
           <DailyInput 
@@ -205,7 +235,6 @@ const App: React.FC = () => {
             onBack={goHome}
           />
         );
-
       case AppScreen.DICTATION_GAME:
         return (
           <DictationGame 
@@ -214,9 +243,9 @@ const App: React.FC = () => {
             onRecordError={handleRecordError}
             onComplete={() => {}}
             onExit={goHome}
+            onPlayAudio={playAudio} // Pass audio handler
           />
         );
-
       case AppScreen.REVIEW_GAME:
         return (
            <DictationGame 
@@ -226,18 +255,18 @@ const App: React.FC = () => {
             onWordSuccess={handleWordSuccess}
             onComplete={() => {}}
             onExit={goHome}
+            onPlayAudio={playAudio} // Pass audio handler
           />
         );
-
       case AppScreen.WORD_BOOK:
         return (
           <WordBook 
             words={wordBook}
             onDelete={deleteWord}
             onBack={goHome}
+            onPlayAudio={playAudio} // Pass audio handler
           />
         );
-        
       default:
         return null;
     }
@@ -245,7 +274,6 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen w-full relative overflow-x-hidden pb-10 bg-gradient-to-b from-[#FFF0F5] to-[#E6E6FA]">
-      {/* Header / Brand */}
       {currentScreen !== AppScreen.WELCOME && (
          <div className="pt-4 flex justify-center">
              <div 
@@ -258,7 +286,6 @@ const App: React.FC = () => {
              </div>
          </div>
       )}
-
       {renderContent()}
     </div>
   );

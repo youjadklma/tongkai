@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { WordItem, GameMode } from '../types';
-import { getWordAudio, playAudioBuffer } from '../services/geminiService';
-import { Volume2, XCircle, CheckCircle, Lightbulb, RefreshCw, Home, WifiOff } from 'lucide-react';
+import { Volume2, XCircle, CheckCircle, Lightbulb, RefreshCw, Home } from 'lucide-react';
 
 interface DictationGameProps {
   words: WordItem[];
@@ -10,9 +9,10 @@ interface DictationGameProps {
   onWordSuccess?: (id: string) => void;
   onComplete: (correctCount: number) => void;
   onExit: () => void;
+  onPlayAudio: (word: string) => void;
 }
 
-const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onRecordError, onWordSuccess, onComplete, onExit }) => {
+const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onRecordError, onWordSuccess, onComplete, onExit, onPlayAudio }) => {
   // Game State
   const [queue, setQueue] = useState<WordItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -20,8 +20,6 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onRecordErro
   const [gameState, setGameState] = useState<'PRELOAD' | 'PLAYING' | 'SUCCESS' | 'GAME_OVER'>('PRELOAD');
   const [hintsLeft, setHintsLeft] = useState(1);
   const [feedback, setFeedback] = useState<'NONE' | 'SHAKE' | 'CORRECT'>('NONE');
-  const [audioCache, setAudioCache] = useState<Record<string, ArrayBuffer>>({});
-  const [isOfflineMode, setIsOfflineMode] = useState(false);
   
   // Refs for logic
   const inputRef = useRef<HTMLInputElement>(null);
@@ -40,79 +38,33 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onRecordErro
         return;
     }
 
-    // Safety Valve: Force start after 2 seconds even if audio hasn't loaded.
-    // This prevents the "Stuck on Preparing" issue in intranet environments.
-    const safetyTimer = setTimeout(() => {
-        if (gameState === 'PRELOAD') {
-            console.warn("Audio load timed out, forcing start in Offline Mode");
-            setIsOfflineMode(true);
-            setGameState('PLAYING');
-        }
-    }, 2000);
+    // Short delay to simulate preparation, then start immediately
+    // We don't need to "preload" as strictly with Youdao CDN as it's faster
+    const timer = setTimeout(() => {
+        setGameState('PLAYING');
+    }, 1000);
 
-    // Attempt to preload first word
-    loadAudio(shuffled[0].english).then(() => {
-        // If we haven't forced start yet, start normally
-        if (gameState !== 'PLAYING') {
-            clearTimeout(safetyTimer);
-            setGameState('PLAYING');
-        }
-    });
-
-    // Background load others
-    shuffled.slice(1).forEach(w => loadAudio(w.english));
-
-    return () => clearTimeout(safetyTimer);
+    return () => clearTimeout(timer);
   }, [words]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Effect to play audio when word changes or game starts
   useEffect(() => {
     if (gameState === 'PLAYING' && queue[currentIndex]) {
-      playCurrentWord();
-      setUserInput('');
-      // Focus input
-      setTimeout(() => inputRef.current?.focus(), 100);
+      // Small delay to ensure UI is ready
+      const timer = setTimeout(() => {
+        onPlayAudio(queue[currentIndex].english);
+        setUserInput('');
+        inputRef.current?.focus();
+      }, 500);
+      return () => clearTimeout(timer);
     }
-  }, [gameState, currentIndex, queue]);
+  }, [gameState, currentIndex, queue, onPlayAudio]);
 
-  // Audio Loader
-  const loadAudio = async (text: string) => {
-    if (audioCache[text]) return;
-    const buffer = await getWordAudio(text);
-    if (buffer) {
-      setAudioCache(prev => ({ ...prev, [text]: buffer }));
-    }
-  };
-
-  const playCurrentWord = async () => {
-    const word = queue[currentIndex].english;
-    
-    // Check cache first
-    if (audioCache[word]) {
-      playAudioBuffer(audioCache[word]);
-    } else {
-      // Try fetching just-in-time
-      const buffer = await getWordAudio(word);
-      if (buffer) {
-        setAudioCache(prev => ({ ...prev, [word]: buffer }));
-        playAudioBuffer(buffer);
-      } else {
-        // Fallback to Web Speech API (Offline)
-        setIsOfflineMode(true); // Mark as offline if fallback used
-        const msg = new SpeechSynthesisUtterance(word);
-        msg.lang = 'en-US';
-        msg.rate = 0.9;
-        window.speechSynthesis.cancel(); // Clear any queued speech
-        window.speechSynthesis.speak(msg);
-      }
-    }
-  };
-
-  // Speak letter on typing (Web Speech API for low latency)
+  // Speak letter on typing (Web Speech API for low latency feedback)
   const speakLetter = (char: string) => {
     window.speechSynthesis.cancel();
     const msg = new SpeechSynthesisUtterance(char);
-    msg.rate = 1.5; // Faster for typing
+    msg.rate = 1.5; 
     msg.lang = 'en-US';
     window.speechSynthesis.speak(msg);
   };
@@ -194,7 +146,6 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onRecordErro
       <div className="flex flex-col items-center justify-center min-h-[50vh]">
         <RefreshCw className="animate-spin text-cute-blue mb-4" size={48} />
         <p className="font-cute text-xl text-text-main">准备单词中...</p>
-        <p className="text-gray-400 text-sm mt-2">首次加载可能需要几秒钟</p>
       </div>
     );
   }
@@ -254,11 +205,6 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onRecordErro
             <span className="text-sm font-bold bg-white px-3 py-1 rounded-full shadow-sm text-gray-400">
                 {mode === GameMode.DAILY ? "📅 每日听写" : "🔄 复习模式"}
             </span>
-            {isOfflineMode && (
-                <span className="text-xs font-bold bg-gray-100 px-2 py-1 rounded-full shadow-sm text-gray-400 flex items-center gap-1" title="网络连接受限，使用离线语音">
-                    <WifiOff size={10} /> 离线模式
-                </span>
-            )}
          </div>
          <span className="text-sm font-bold bg-white px-3 py-1 rounded-full shadow-sm text-cute-purple">
              {currentIndex + 1} / {queue.length}
@@ -278,7 +224,7 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onRecordErro
         
         {/* Audio Button (Big) */}
         <button 
-          onClick={playCurrentWord}
+          onClick={() => onPlayAudio(queue[currentIndex].english)}
           className="bg-cute-yellow p-8 rounded-full mb-8 shadow-md hover:scale-110 active:scale-95 transition-transform group ring-4 ring-yellow-100"
         >
           <Volume2 size={56} className="text-orange-400 group-hover:text-orange-600" />

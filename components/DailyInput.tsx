@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { WordItem } from '../types';
-import { Loader2, Save } from 'lucide-react';
+import { Loader2, Save, Sparkles, Wand2 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
+import { getWordDefinition } from '../services/geminiService';
 
 interface DailyInputProps {
   onStartDictation: (words: WordItem[]) => void;
@@ -17,11 +18,85 @@ const DailyInput: React.FC<DailyInputProps> = ({ onStartDictation, onBack }) => 
   const [inputs, setInputs] = useState<InputPair[]>(Array(6).fill({ english: '', chinese: '' }));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Track which fields are currently fetching definitions
+  const [translatingIndices, setTranslatingIndices] = useState<Set<number>>(new Set());
+  
+  // Refs for debouncing
+  const debounceTimers = useRef<{[key: number]: number}>({});
 
-  const handleInputChange = (index: number, field: 'english' | 'chinese', value: string) => {
+  useEffect(() => {
+    return () => {
+      // Cleanup timers
+      Object.values(debounceTimers.current).forEach(timer => clearTimeout(timer as number));
+    };
+  }, []);
+
+  const triggerTranslation = async (index: number, englishWord: string) => {
+    if (!englishWord.trim()) return;
+
+    setTranslatingIndices(prev => new Set(prev).add(index));
+
+    try {
+      const definition = await getWordDefinition(englishWord);
+      
+      if (definition) {
+        setInputs(prev => {
+          const newInputs = [...prev];
+          // Only auto-fill if the Chinese field is currently empty to avoid overwriting user edits
+          if (!newInputs[index].chinese.trim()) {
+            newInputs[index] = { ...newInputs[index], chinese: definition };
+          }
+          return newInputs;
+        });
+      }
+    } catch (e) {
+      console.warn("Auto-translation failed for", englishWord);
+    } finally {
+      setTranslatingIndices(prev => {
+        const next = new Set(prev);
+        next.delete(index);
+        return next;
+      });
+    }
+  };
+
+  const handleEnglishChange = (index: number, value: string) => {
+    // 1. Update state immediately
     const newInputs = [...inputs];
-    newInputs[index] = { ...newInputs[index], [field]: value };
+    newInputs[index] = { ...newInputs[index], english: value };
     setInputs(newInputs);
+
+    // 2. Clear existing timer
+    if (debounceTimers.current[index]) {
+      clearTimeout(debounceTimers.current[index]);
+    }
+
+    // 3. Set new timer (Debounce 800ms)
+    // Only trigger if value is not empty
+    if (value.trim()) {
+        debounceTimers.current[index] = window.setTimeout(() => {
+            triggerTranslation(index, value);
+        }, 800);
+    }
+  };
+
+  const handleChineseChange = (index: number, value: string) => {
+    const newInputs = [...inputs];
+    newInputs[index] = { ...newInputs[index], chinese: value };
+    setInputs(newInputs);
+  };
+
+  const handleBlur = (index: number) => {
+      // If user leaves field and we haven't translated yet (or timer is pending), trigger immediately
+      const word = inputs[index].english;
+      // If timer exists, clear it and trigger immediately to feel responsive
+      if (debounceTimers.current[index]) {
+          clearTimeout(debounceTimers.current[index]);
+          delete debounceTimers.current[index];
+          if (word.trim()) {
+             triggerTranslation(index, word);
+          }
+      }
   };
 
   const handleSubmit = async () => {
@@ -63,37 +138,56 @@ const DailyInput: React.FC<DailyInputProps> = ({ onStartDictation, onBack }) => 
         <h2 className="text-2xl font-cute font-bold text-center text-text-main mb-2">
           📝 输入今天的6个单词
         </h2>
-        <p className="text-center text-gray-400 mb-6 text-sm">记得输入中文释义，保存后将加入单词本哦</p>
+        <p className="text-center text-gray-400 mb-6 text-sm flex items-center justify-center gap-1">
+          <Wand2 size={14} className="text-cute-purple" />
+          <span>输入英文后，AI会自动翻译中文哦</span>
+        </p>
 
         <div className="grid grid-cols-1 gap-4 mb-8">
           {inputs.map((pair, idx) => (
-            <div key={idx} className="flex flex-col md:flex-row gap-2 items-center bg-gray-50 p-3 rounded-2xl border border-gray-100 hover:border-cute-blue transition-colors group">
+            <div key={idx} className="flex flex-col md:flex-row gap-2 items-center bg-gray-50 p-3 rounded-2xl border border-gray-100 hover:border-cute-blue transition-colors group relative">
                <span className="w-8 h-8 flex items-center justify-center bg-cute-purple text-white font-bold rounded-full shadow-sm shrink-0 group-hover:bg-cute-blue transition-colors">
                  {idx + 1}
                </span>
                
-               <div className="flex-1 w-full">
+               <div className="flex-1 w-full relative">
                   <input
                     type="text"
                     value={pair.english}
-                    onChange={(e) => handleInputChange(idx, 'english', e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-cute-blue focus:ring-4 focus:ring-cute-blue/10 outline-none transition text-xl font-bold text-text-main placeholder-gray-300"
-                    placeholder="English Word (英文)"
+                    onChange={(e) => handleEnglishChange(idx, e.target.value)}
+                    onBlur={() => handleBlur(idx)}
+                    className="w-full px-4 py-3 rounded-xl border-2 border-transparent bg-text-main focus:border-cute-blue focus:ring-4 focus:ring-cute-blue/30 outline-none transition text-xl font-bold text-white placeholder-white/40"
+                    placeholder="English Word"
                     disabled={loading}
                     autoComplete="off"
                   />
                </div>
 
-               <div className="flex-1 w-full">
+               <div className="flex-1 w-full relative">
                   <input
                     type="text"
                     value={pair.chinese}
-                    onChange={(e) => handleInputChange(idx, 'chinese', e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-cute-pink focus:ring-4 focus:ring-cute-pink/10 outline-none transition text-lg font-medium text-gray-600 placeholder-gray-300"
-                    placeholder="中文释义"
+                    onChange={(e) => handleChineseChange(idx, e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl border-2 border-transparent bg-text-main/90 focus:border-cute-pink focus:ring-4 focus:ring-cute-pink/30 outline-none transition text-lg font-bold text-white placeholder-white/40"
+                    placeholder="中文释义 (自动翻译)"
                     disabled={loading}
                     autoComplete="off"
                   />
+                  
+                  {/* Translating Indicator */}
+                  {translatingIndices.has(idx) && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-cute-purple text-xs font-bold bg-white/90 px-2 py-1 rounded-full shadow-sm animate-pulse z-10">
+                        <Loader2 size={12} className="animate-spin" />
+                        <span>翻译中...</span>
+                    </div>
+                  )}
+
+                  {/* Magic Icon for non-empty, non-translating states to show it worked */}
+                  {!translatingIndices.has(idx) && pair.chinese && !pair.english.match(/[\u4e00-\u9fa5]/) && (
+                     <div className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 pointer-events-none">
+                        <Sparkles size={16} />
+                     </div>
+                  )}
                </div>
             </div>
           ))}

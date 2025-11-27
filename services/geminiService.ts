@@ -1,7 +1,11 @@
 import { GoogleGenAI, Modality, GenerateContentResponse } from "@google/genai";
+import { CORE_DICTIONARY } from './dictionary';
 
 let aiClient: GoogleGenAI | null = null;
 const API_TIMEOUT_MS = 3000; // 3 seconds timeout for Chinese intranet environments
+
+// Basic Dictionary for common primary school vocabulary
+const LOCAL_DICTIONARY: Record<string, string> = CORE_DICTIONARY;
 
 /**
  * Safely gets the Gemini Client instance.
@@ -61,25 +65,36 @@ const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
 
 /**
  * Fetches the Chinese definition for an English word using Gemini Flash.
+ * Checks local dictionary first for instant response.
  */
 export const getWordDefinition = async (word: string): Promise<string> => {
+  if (!word) return "";
+  
+  // 1. Check Local Dictionary
+  const lowerWord = word.toLowerCase().trim();
+  if (LOCAL_DICTIONARY[lowerWord]) {
+      return LOCAL_DICTIONARY[lowerWord];
+  }
+
+  // 2. Fallback to Gemini
   try {
     const ai = getAiClient();
     const response = await withTimeout(
         ai.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: `You are a dictionary. Translate the English word "${word}" to Chinese. Respond with ONLY the Chinese definition. Do not include pinyin, example sentences, or any introductory text.`,
+        contents: `You are a dictionary. Translate the English word "${word}" to Chinese. Respond with ONLY the Chinese definition (e.g., "苹果"). Do not include pinyin, example sentences, or any introductory text. If the word is invalid or a typo, try to guess or return empty string.`,
         config: {
-            maxOutputTokens: 100,
+            maxOutputTokens: 20, // Reduced tokens for speed
             temperature: 0.1,
         }
         }),
         API_TIMEOUT_MS
     ) as GenerateContentResponse;
-    return response.text?.trim() || "暂无释义";
+    return response.text?.trim() || "";
   } catch (error) {
-    console.warn("Definition fetch failed (Offline mode active):", error);
-    return "查询失败(离线)";
+    console.warn("Definition fetch failed (Offline/Error):", error);
+    // Return empty string on error so UI doesn't show error message in the input field
+    return "";
   }
 };
 

@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { WordItem, AppScreen, GameMode } from './types';
 import Welcome from './components/Welcome';
 import DailyInput from './components/DailyInput';
 import DictationGame from './components/DictationGame';
 import WordBook from './components/WordBook';
 import { Book, RotateCw, Trophy } from 'lucide-react';
+import { getWordAudio, playAudioBuffer } from './services/geminiService';
 
 const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>(AppScreen.WELCOME);
@@ -12,74 +13,78 @@ const App: React.FC = () => {
   const [dailyWords, setDailyWords] = useState<WordItem[]>([]);
   const [reviewWords, setReviewWords] = useState<WordItem[]>([]);
   
-  // --- Audio System for Chinese Intranet ---
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const audioCacheRef = useRef<Map<string, AudioBuffer>>(new Map());
-
-  // Initialize Audio Context (lazily)
-  const getAudioContext = () => {
-    if (!audioContextRef.current) {
-      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-      audioContextRef.current = new AudioContextClass();
-    }
-    if (audioContextRef.current.state === 'suspended') {
-      audioContextRef.current.resume();
-    }
-    return audioContextRef.current;
-  };
-
-  // Robust Audio Player: Youdao -> Baidu -> Browser TTS
+  // Robust Audio Player: Youdao -> Gemini -> Baidu -> Browser TTS
   const playAudio = async (word: string) => {
-    // 1. Try Browser Cache/AudioContext first
-    if (audioCacheRef.current.has(word)) {
-      playBuffer(audioCacheRef.current.get(word)!);
+    try {
+      // 1. Try Youdao Dictionary API (Fast, usually cached by browser)
+      // Using HTML5 Audio to avoid CORS issues with fetch()
+      const youdaoUrl = `https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(word)}&type=2`;
+      await playExternalAudio(youdaoUrl);
       return;
+    } catch (e) {
+      // Continue to next fallback
     }
 
     try {
-      // 2. Try Youdao Dictionary API (Best for China)
-      // type=2 is US English
-      const url = `https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(word)}&type=2`;
-      await playUrlAudio(url, word);
-    } catch (e) {
-      console.warn("Youdao audio failed, trying backup...");
-      try {
-        // 3. Try Baidu TTS
-        const baiduUrl = `https://fanyi.baidu.com/gettts?lan=en&text=${encodeURIComponent(word)}&spd=3&source=web`;
-        await playUrlAudio(baiduUrl, word);
-      } catch (e2) {
-        console.warn("Web audio failed, using browser TTS fallback");
-        // 4. Fallback to Browser Speech Synthesis
-        const msg = new SpeechSynthesisUtterance(word);
-        msg.lang = 'en-US';
-        msg.rate = 0.9;
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(msg);
+      // 2. Try Gemini TTS (High Quality, Natural)
+      const pcmBuffer = await getWordAudio(word);
+      if (pcmBuffer) {
+        await playAudioBuffer(pcmBuffer);
+        return;
       }
+    } catch (e) {
+      // Continue
+    }
+
+    try {
+      // 3. Try Baidu TTS (Backup)
+      const baiduUrl = `https://fanyi.baidu.com/gettts?lan=en&text=${encodeURIComponent(word)}&spd=3&source=web`;
+      await playExternalAudio(baiduUrl);
+      return;
+    } catch (e2) {
+      // Continue
+    }
+
+    // 4. Fallback to Browser Speech Synthesis (Offline/Last resort)
+    try {
+      window.speechSynthesis.cancel();
+      const msg = new SpeechSynthesisUtterance(word);
+      msg.lang = 'en-US';
+      msg.rate = 0.9;
+      window.speechSynthesis.speak(msg);
+    } catch (e) {
+      console.error("All audio methods failed");
     }
   };
 
-  // Helper: Play from URL and cache the buffer
-  const playUrlAudio = async (url: string, word: string) => {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error("Network response not ok");
-    
-    const arrayBuffer = await response.arrayBuffer();
-    const ctx = getAudioContext();
-    const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
-    
-    // Cache it
-    audioCacheRef.current.set(word, audioBuffer);
-    playBuffer(audioBuffer);
-  };
+  // Helper: Play from URL using HTML5 Audio Element (Bypasses CORS for playback)
+  const playExternalAudio = (url: string): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      const audio = new Audio(url);
+      let resolved = false;
 
-  // Helper: Play an AudioBuffer
-  const playBuffer = (buffer: AudioBuffer) => {
-    const ctx = getAudioContext();
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-    source.connect(ctx.destination);
-    source.start(0);
+      const handleSuccess = () => {
+        if (!resolved) {
+            resolved = true;
+            resolve();
+        }
+      };
+
+      const handleError = () => {
+        if (!resolved) {
+            resolved = true;
+            reject(new Error("Audio playback failed"));
+        }
+      };
+
+      audio.onplay = handleSuccess;
+      audio.onerror = handleError;
+
+      // Set a timeout to prevent hanging
+      setTimeout(() => handleError(), 3000);
+
+      audio.play().catch(handleError);
+    });
   };
 
   // Load from LocalStorage on mount
@@ -97,11 +102,6 @@ const App: React.FC = () => {
         console.error("Failed to load wordbook");
       }
     }
-    
-    // Cleanup audio context
-    return () => {
-      audioContextRef.current?.close();
-    };
   }, []);
 
   const sortWords = (words: WordItem[]) => {

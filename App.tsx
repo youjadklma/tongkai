@@ -5,38 +5,7 @@ import DailyInput from './components/DailyInput';
 import DictationGame from './components/DictationGame';
 import WordBook from './components/WordBook';
 import { Book, RotateCw, Trophy } from 'lucide-react';
-import { getWordAudio, playAudioBuffer } from './services/geminiService';
-
-// Helper: Play from URL using HTML5 Audio Element (Bypasses CORS for playback)
-// Moved outside component to ensure stability
-const playExternalAudio = (url: string): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    const audio = new Audio(url);
-    let resolved = false;
-
-    const handleSuccess = () => {
-      if (!resolved) {
-          resolved = true;
-          resolve();
-      }
-    };
-
-    const handleError = () => {
-      if (!resolved) {
-          resolved = true;
-          reject(new Error("Audio playback failed"));
-      }
-    };
-
-    audio.onplay = handleSuccess;
-    audio.onerror = handleError;
-
-    // Set a timeout to prevent hanging
-    setTimeout(() => handleError(), 3000);
-
-    audio.play().catch(handleError);
-  });
-};
+import { getWordAudio, playAudioBuffer, playExternalAudio } from './services/geminiService';
 
 const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>(AppScreen.WELCOME);

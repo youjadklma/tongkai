@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { WordItem, GameMode } from '../types';
 import { Volume2, XCircle, CheckCircle, Lightbulb, RefreshCw, Home, Check } from 'lucide-react';
+import { playLetterAudio } from '../services/geminiService';
 
 interface DictationGameProps {
   words: WordItem[];
@@ -91,24 +92,8 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onRecordErro
   };
 
   const speakLetter = (char: string) => {
-    try {
-      if (typeof window !== 'undefined' && window.speechSynthesis) {
-        // Cancel any pending speech (esp. previous letters) to keep up with typing speed
-        window.speechSynthesis.cancel();
-        
-        // Use Uppercase for clearer letter name pronunciation (e.g., "A" vs "ah")
-        const msg = new SpeechSynthesisUtterance(char.toUpperCase());
-        msg.lang = 'en-US';
-        // Increase rate for snappy feedback
-        msg.rate = 1.5; 
-        // Slightly higher pitch for a "cuter", more distinct sound
-        msg.pitch = 1.2;
-        
-        window.speechSynthesis.speak(msg);
-      }
-    } catch (e) {
-      console.warn("Letter speech error:", e);
-    }
+    // Use the optimized audio service for letters
+    playLetterAudio(char);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {

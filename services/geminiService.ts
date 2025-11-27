@@ -8,6 +8,10 @@ const API_TIMEOUT_MS = 3000; // 3 seconds timeout for Chinese intranet environme
 // Basic Dictionary for common primary school vocabulary
 const LOCAL_DICTIONARY: Record<string, string> = CORE_DICTIONARY;
 
+// --- Audio Cache for Letters (A-Z) ---
+// Acts as a fast in-memory store for the 26 audio files
+const letterAudioCache: Record<string, HTMLAudioElement> = {};
+
 /**
  * Safely gets the Gemini Client instance.
  * Lazy initialization prevents the app from crashing on load if the API Key is missing.
@@ -210,3 +214,74 @@ export const playAudioBuffer = async (audioBuffer: ArrayBuffer) => {
         console.error("Audio playback error", e);
     }
 }
+
+/**
+ * Plays audio from a URL using HTML5 Audio (Bypasses CORS for simple playback)
+ */
+export const playExternalAudio = (url: string): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    const audio = new Audio(url);
+    let resolved = false;
+
+    const handleSuccess = () => {
+      if (!resolved) {
+          resolved = true;
+          resolve();
+      }
+    };
+
+    const handleError = () => {
+      if (!resolved) {
+          resolved = true;
+          reject(new Error("Audio playback failed"));
+      }
+    };
+
+    audio.onplay = handleSuccess;
+    audio.onerror = handleError;
+
+    // Set a timeout to prevent hanging
+    setTimeout(() => handleError(), 3000);
+
+    audio.play().catch(handleError);
+  });
+};
+
+/**
+ * Specialized Player for Single Letters.
+ * Uses a caching mechanism to ensure typing feedback is instant.
+ * Source: Youdao Dictionary Audio (Type 2 = American English)
+ */
+export const playLetterAudio = (char: string) => {
+    // 1. Validation: Ensure it's a single letter
+    const lowerChar = char.toLowerCase();
+    if (!/^[a-z]$/.test(lowerChar)) return;
+
+    // 2. Check Cache (Instant Playback)
+    if (letterAudioCache[lowerChar]) {
+        const audio = letterAudioCache[lowerChar];
+        audio.currentTime = 0;
+        audio.play().catch(e => console.warn("Cached letter playback interrupted", e));
+        return;
+    }
+
+    // 3. Create, Cache, and Play (First time)
+    // We use Youdao as the source for the 26 letter audio files as they are high quality and consistent.
+    const url = `https://dict.youdao.com/dictvoice?audio=${lowerChar}&type=2`;
+    const audio = new Audio(url);
+    
+    // Store in cache
+    letterAudioCache[lowerChar] = audio;
+
+    audio.play().catch(e => {
+        console.warn("Letter playback failed, falling back to synthesis", e);
+        // Fallback to browser TTS if file fails
+        if (typeof window !== 'undefined' && window.speechSynthesis) {
+            window.speechSynthesis.cancel();
+            const msg = new SpeechSynthesisUtterance(char.toUpperCase());
+            msg.lang = 'en-US';
+            msg.rate = 1.5;
+            window.speechSynthesis.speak(msg);
+        }
+    });
+};

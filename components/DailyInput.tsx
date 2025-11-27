@@ -160,6 +160,9 @@ const DailyInput: React.FC<DailyInputProps> = ({ onStartDictation, onBack }) => 
                     placeholder="English Word"
                     disabled={loading}
                     autoComplete="off"
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    spellCheck="false"
                   />
                </div>
 

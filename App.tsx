@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { WordItem, AppScreen, GameMode } from './types';
 import Welcome from './components/Welcome';
 import DailyInput from './components/DailyInput';
@@ -7,6 +7,37 @@ import WordBook from './components/WordBook';
 import { Book, RotateCw, Trophy } from 'lucide-react';
 import { getWordAudio, playAudioBuffer } from './services/geminiService';
 
+// Helper: Play from URL using HTML5 Audio Element (Bypasses CORS for playback)
+// Moved outside component to ensure stability
+const playExternalAudio = (url: string): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    const audio = new Audio(url);
+    let resolved = false;
+
+    const handleSuccess = () => {
+      if (!resolved) {
+          resolved = true;
+          resolve();
+      }
+    };
+
+    const handleError = () => {
+      if (!resolved) {
+          resolved = true;
+          reject(new Error("Audio playback failed"));
+      }
+    };
+
+    audio.onplay = handleSuccess;
+    audio.onerror = handleError;
+
+    // Set a timeout to prevent hanging
+    setTimeout(() => handleError(), 3000);
+
+    audio.play().catch(handleError);
+  });
+};
+
 const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>(AppScreen.WELCOME);
   const [wordBook, setWordBook] = useState<WordItem[]>([]);
@@ -14,7 +45,9 @@ const App: React.FC = () => {
   const [reviewWords, setReviewWords] = useState<WordItem[]>([]);
   
   // Robust Audio Player: Youdao -> Gemini -> Baidu -> Browser TTS
-  const playAudio = async (word: string) => {
+  // Memoized with useCallback to prevent recreating the function on every render,
+  // which would cause the DictationGame effect to re-run and clear user input.
+  const playAudio = useCallback(async (word: string) => {
     try {
       // 1. Try Youdao Dictionary API (Fast, usually cached by browser)
       // Using HTML5 Audio to avoid CORS issues with fetch()
@@ -55,37 +88,7 @@ const App: React.FC = () => {
     } catch (e) {
       console.error("All audio methods failed");
     }
-  };
-
-  // Helper: Play from URL using HTML5 Audio Element (Bypasses CORS for playback)
-  const playExternalAudio = (url: string): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      const audio = new Audio(url);
-      let resolved = false;
-
-      const handleSuccess = () => {
-        if (!resolved) {
-            resolved = true;
-            resolve();
-        }
-      };
-
-      const handleError = () => {
-        if (!resolved) {
-            resolved = true;
-            reject(new Error("Audio playback failed"));
-        }
-      };
-
-      audio.onplay = handleSuccess;
-      audio.onerror = handleError;
-
-      // Set a timeout to prevent hanging
-      setTimeout(() => handleError(), 3000);
-
-      audio.play().catch(handleError);
-    });
-  };
+  }, []);
 
   // Load from LocalStorage on mount
   useEffect(() => {

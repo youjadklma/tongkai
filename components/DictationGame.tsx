@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { WordItem, GameMode } from '../types';
-import { Volume2, XCircle, CheckCircle, Lightbulb, RefreshCw, Home } from 'lucide-react';
+import { Volume2, XCircle, CheckCircle, Lightbulb, RefreshCw, Home, Check } from 'lucide-react';
 
 interface DictationGameProps {
   words: WordItem[];
@@ -23,6 +23,7 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onRecordErro
   
   // Refs for logic
   const inputRef = useRef<HTMLInputElement>(null);
+  const isComposing = useRef(false);
 
   // Initialize Game
   useEffect(() => {
@@ -39,7 +40,6 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onRecordErro
     }
 
     // Short delay to simulate preparation, then start immediately
-    // We don't need to "preload" as strictly with Youdao CDN as it's faster
     const timer = setTimeout(() => {
         setGameState('PLAYING');
     }, 1000);
@@ -47,47 +47,83 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onRecordErro
     return () => clearTimeout(timer);
   }, [words]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Effect to play audio when word changes or game starts
+  // Effect: Reset Input State immediately when word changes
   useEffect(() => {
     if (gameState === 'PLAYING' && queue[currentIndex]) {
-      // Small delay to ensure UI is ready
+      setUserInput('');
+      isComposing.current = false;
+      
+      // Attempt to focus
+      // Timeout helps ensure mobile keyboard doesn't glitch if UI is shifting
+      setTimeout(() => {
+        if (inputRef.current) {
+           inputRef.current.focus();
+           // Ensure input is visible (not hidden by keyboard)
+           inputRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 50);
+    }
+  }, [gameState, currentIndex, queue]);
+
+  // Effect: Play audio with delay (Separated to not wipe input later)
+  useEffect(() => {
+    if (gameState === 'PLAYING' && queue[currentIndex]) {
       const timer = setTimeout(() => {
         onPlayAudio(queue[currentIndex].english);
-        setUserInput('');
-        inputRef.current?.focus();
       }, 500);
       return () => clearTimeout(timer);
     }
   }, [gameState, currentIndex, queue, onPlayAudio]);
 
-  // Speak letter on typing (Web Speech API for low latency feedback)
-  const speakLetter = (char: string) => {
-    window.speechSynthesis.cancel();
-    const msg = new SpeechSynthesisUtterance(char);
-    msg.rate = 1.5; 
-    msg.lang = 'en-US';
-    window.speechSynthesis.speak(msg);
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Prevent submission if IME is composing (e.g. typing Pinyin on mobile)
+    if (e.key === 'Enter' && !isComposing.current) {
+      submitWord();
+    }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      submitWord();
+  const handleCompositionStart = () => {
+    isComposing.current = true;
+  };
+
+  const handleCompositionEnd = () => {
+    isComposing.current = false;
+  };
+
+  const speakLetter = (char: string) => {
+    try {
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+        const msg = new SpeechSynthesisUtterance(char.toLowerCase());
+        msg.lang = 'en-US';
+        msg.rate = 1.2;
+        window.speechSynthesis.speak(msg);
+      }
+    } catch (e) {
+      console.warn("Letter speech error:", e);
     }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
-    // Speak only the new character if added
+    
+    // Check if character added
     if (val.length > userInput.length) {
-      const char = val.slice(-1);
-      if (/[a-zA-Z]/.test(char)) {
-        speakLetter(char);
-      }
+        const char = val.slice(-1);
+        if (/^[a-zA-Z]$/.test(char)) {
+            speakLetter(char);
+        }
     }
+    
     setUserInput(val);
   };
 
   const submitWord = () => {
+    if (!queue[currentIndex]) return;
+    
+    // Prevent accidental empty submissions
+    if (!userInput.trim()) return;
+
     const currentWord = queue[currentIndex];
     const target = currentWord.english.toLowerCase().trim();
     const input = userInput.toLowerCase().trim();
@@ -237,9 +273,13 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onRecordErro
           <input
             ref={inputRef}
             type="text"
+            inputMode="text"
+            enterKeyHint="done"
             value={userInput}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
+            onCompositionStart={handleCompositionStart}
+            onCompositionEnd={handleCompositionEnd}
             className={`
               w-full text-center text-5xl font-bold font-cute py-4 border-b-4 outline-none bg-transparent tracking-wider
               ${feedback === 'CORRECT' ? 'border-green-400 text-green-500' : 'border-gray-100 text-text-main focus:border-cute-blue'}
@@ -247,12 +287,29 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onRecordErro
             `}
             placeholder=""
             autoComplete="off"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck="false"
             autoFocus
           />
           {feedback === 'CORRECT' && (
              <CheckCircle className="absolute right-0 top-1/2 -translate-y-1/2 text-green-500 animate-bounce" size={40} />
           )}
         </div>
+
+        {/* Submit Button (Visible on all devices for reliability) */}
+        {feedback !== 'CORRECT' && (
+          <div className="mt-6 flex justify-center">
+            <button
+                onClick={submitWord}
+                disabled={!userInput.trim()}
+                className="bg-gradient-to-r from-cute-blue to-blue-400 text-white font-bold py-3 px-10 rounded-full shadow-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-xl"
+            >
+                <span>确认</span>
+                <Check size={24} />
+            </button>
+          </div>
+        )}
 
         {/* Success Definition Feedback */}
         {feedback === 'CORRECT' && (

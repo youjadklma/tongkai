@@ -2,6 +2,7 @@ import { GoogleGenAI, Modality, GenerateContentResponse } from "@google/genai";
 import { CORE_DICTIONARY } from './dictionary';
 
 let aiClient: GoogleGenAI | null = null;
+let sharedAudioContext: AudioContext | null = null;
 const API_TIMEOUT_MS = 3000; // 3 seconds timeout for Chinese intranet environments
 
 // Basic Dictionary for common primary school vocabulary
@@ -143,6 +144,25 @@ export const getWordAudio = async (text: string): Promise<ArrayBuffer | null> =>
 };
 
 /**
+ * Gets or creates the shared AudioContext.
+ * Handles browser suspension state.
+ */
+const getSharedAudioContext = (): AudioContext => {
+  if (!sharedAudioContext) {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    // Use system default sample rate. Do NOT force a specific rate in constructor 
+    // as it causes failures on many browsers/devices.
+    sharedAudioContext = new AudioContextClass();
+  }
+  
+  if (sharedAudioContext.state === 'suspended') {
+    sharedAudioContext.resume().catch(e => console.error("Audio resume failed", e));
+  }
+  
+  return sharedAudioContext;
+};
+
+/**
  * Decodes raw PCM data to AudioBuffer.
  * Gemini 2.5 TTS returns 24kHz, 1 channel PCM (Int16) by default.
  */
@@ -158,6 +178,9 @@ const decodePCMToAudioBuffer = (
 
   const dataInt16 = new Int16Array(rawBuffer);
   const frameCount = dataInt16.length / numChannels;
+  
+  // Create buffer with the specific sample rate of the source audio (24kHz).
+  // The AudioContext (usually 44.1k or 48k) will handle resampling automatically during playback.
   const audioBuffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
 
   for (let channel = 0; channel < numChannels; channel++) {
@@ -173,23 +196,17 @@ const decodePCMToAudioBuffer = (
  * Helper to play audio buffer.
  */
 export const playAudioBuffer = async (audioBuffer: ArrayBuffer) => {
-    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-    const audioContext = new AudioContextClass({ sampleRate: 24000 });
-    
     try {
+        const audioContext = getSharedAudioContext();
         const decodedBuffer = decodePCMToAudioBuffer(audioBuffer, audioContext);
         
         const source = audioContext.createBufferSource();
         source.buffer = decodedBuffer;
         source.connect(audioContext.destination);
         
-        source.onended = () => {
-          audioContext.close();
-        };
-
+        // No need to close context in onended, as it is shared.
         source.start(0);
     } catch (e) {
         console.error("Audio playback error", e);
-        audioContext.close();
     }
 }

@@ -4,7 +4,7 @@ import Welcome from './components/Welcome';
 import DailyInput from './components/DailyInput';
 import DictationGame from './components/DictationGame';
 import WordBook from './components/WordBook';
-import { Book, RotateCw, Trophy } from 'lucide-react';
+import { Trophy } from 'lucide-react';
 import { getWordAudio, playAudioBuffer, playExternalAudio } from './services/geminiService';
 
 const App: React.FC = () => {
@@ -12,6 +12,7 @@ const App: React.FC = () => {
   const [wordBook, setWordBook] = useState<WordItem[]>([]);
   const [dailyWords, setDailyWords] = useState<WordItem[]>([]);
   const [reviewWords, setReviewWords] = useState<WordItem[]>([]);
+  const [isReviewSelection, setIsReviewSelection] = useState(false);
   
   // Robust Audio Player: Youdao -> Gemini -> Baidu -> Browser TTS
   // Memoized with useCallback to prevent recreating the function on every render,
@@ -141,29 +142,27 @@ const App: React.FC = () => {
     localStorage.setItem('kaige_wordbook', JSON.stringify(sorted));
   };
 
-  const goHome = () => setCurrentScreen(AppScreen.WELCOME);
+  const goHome = () => {
+    setCurrentScreen(AppScreen.WELCOME);
+    setIsReviewSelection(false);
+  };
+  
   const startDaily = () => setCurrentScreen(AppScreen.DAILY_INPUT);
+  
   const startReview = () => {
       if (wordBook.length === 0) {
           alert("单词本里还没有单词哦，先进行每日练习吧！");
           return;
       }
-      let selected: WordItem[] = [];
-      const sortedBook = sortWords([...wordBook]);
-      const TARGET_COUNT = 6;
-      if (sortedBook.length <= TARGET_COUNT) {
-          selected = sortedBook;
-      } else {
-          const topErrorWords = sortedBook.slice(0, 4);
-          const remainingPool = sortedBook.slice(4);
-          const shuffledPool = remainingPool.sort(() => Math.random() - 0.5);
-          const randomWords = shuffledPool.slice(0, 2);
-          selected = [...topErrorWords, ...randomWords];
-      }
-      setReviewWords(selected);
-      setCurrentScreen(AppScreen.REVIEW_GAME);
+      // Switch to WordBook but in Selection Mode
+      setIsReviewSelection(true);
+      setCurrentScreen(AppScreen.WORD_BOOK);
   };
-  const openBook = () => setCurrentScreen(AppScreen.WORD_BOOK);
+
+  const openBook = () => {
+      setIsReviewSelection(false);
+      setCurrentScreen(AppScreen.WORD_BOOK);
+  };
 
   const handleDailyWordsReady = (words: WordItem[]) => {
     setDailyWords(words);
@@ -171,33 +170,22 @@ const App: React.FC = () => {
     setCurrentScreen(AppScreen.DICTATION_GAME);
   };
 
+  const handleStartReviewGame = (selectedWords: WordItem[]) => {
+      setReviewWords(selectedWords);
+      setCurrentScreen(AppScreen.REVIEW_GAME);
+      setIsReviewSelection(false);
+  };
+
   const renderContent = () => {
     switch (currentScreen) {
       case AppScreen.WELCOME:
         return (
           <div className="flex flex-col h-full">
-             <Welcome onStart={startDaily} />
-             <div className="fixed bottom-10 left-0 right-0 flex justify-center gap-8 animate-fade-in-up px-4">
-                <button 
-                  onClick={startReview}
-                  className="group flex flex-col items-center gap-2 transition hover:-translate-y-2"
-                >
-                  <div className="bg-white p-5 rounded-3xl shadow-lg border-b-4 border-cute-purple group-hover:bg-cute-purple group-hover:border-purple-400 transition-colors">
-                    <RotateCw size={28} className="text-cute-purple group-hover:text-white" />
-                  </div>
-                  <span className="font-cute font-bold text-gray-600 group-hover:text-cute-purple">复习模式</span>
-                </button>
-
-                <button 
-                  onClick={openBook}
-                  className="group flex flex-col items-center gap-2 transition hover:-translate-y-2"
-                >
-                  <div className="bg-white p-5 rounded-3xl shadow-lg border-b-4 border-cute-yellow group-hover:bg-cute-yellow group-hover:border-yellow-400 transition-colors">
-                    <Book size={28} className="text-orange-400 group-hover:text-white" />
-                  </div>
-                  <span className="font-cute font-bold text-gray-600 group-hover:text-orange-400">单词本</span>
-                </button>
-             </div>
+             <Welcome 
+               onStart={startDaily} 
+               onReview={startReview}
+               onWordBook={openBook}
+             />
           </div>
         );
       case AppScreen.DAILY_INPUT:
@@ -237,6 +225,7 @@ const App: React.FC = () => {
             onDelete={deleteWord}
             onBack={goHome}
             onPlayAudio={playAudio} // Pass audio handler
+            onStartReview={isReviewSelection ? handleStartReviewGame : undefined}
           />
         );
       default:

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { WordItem, GameMode } from '../types';
-import { Volume2, XCircle, CheckCircle, Lightbulb, RefreshCw, Home, Check } from 'lucide-react';
+import { Volume2, XCircle, CheckCircle, RefreshCw, Home, Check } from 'lucide-react';
 import { playLetterAudio } from '../services/geminiService';
 
 interface DictationGameProps {
@@ -19,7 +19,6 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onRecordErro
   const [currentIndex, setCurrentIndex] = useState(0);
   const [userInput, setUserInput] = useState('');
   const [gameState, setGameState] = useState<'PRELOAD' | 'PLAYING' | 'SUCCESS' | 'GAME_OVER'>('PRELOAD');
-  const [hintsLeft, setHintsLeft] = useState(1);
   const [feedback, setFeedback] = useState<'NONE' | 'SHAKE' | 'CORRECT'>('NONE');
   
   // Refs for logic
@@ -33,7 +32,6 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onRecordErro
     setQueue(shuffled);
     setCurrentIndex(0);
     setGameState('PRELOAD');
-    setHintsLeft(1);
     
     if (shuffled.length === 0) {
         onExit();
@@ -145,23 +143,6 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onRecordErro
   const handleError = (wordId: string) => {
     onRecordError(wordId);
     setGameState('GAME_OVER');
-  };
-
-  const useHint = () => {
-    if (hintsLeft > 0) {
-      setHintsLeft(prev => prev - 1);
-      const target = queue[currentIndex].english;
-      const msg = new SpeechSynthesisUtterance(`The word starts with ${target.charAt(0)}`);
-      window.speechSynthesis.speak(msg); 
-      
-      const currentLen = userInput.length;
-      if (currentLen < target.length) {
-          setUserInput(target.substring(0, currentLen + 1));
-      } else {
-          setUserInput(target);
-      }
-      inputRef.current?.focus();
-    }
   };
 
   const handleWin = () => {
@@ -309,23 +290,6 @@ const DictationGame: React.FC<DictationGameProps> = ({ words, mode, onRecordErro
              <p className="text-2xl md:text-3xl font-cute font-bold text-green-500 drop-shadow-sm">
                {queue[currentIndex].chinese}
              </p>
-           </div>
-        )}
-
-        {/* Hints (Review Mode Only) */}
-        {mode === GameMode.REVIEW && feedback !== 'CORRECT' && (
-           <div className="mt-8 flex justify-center">
-             <button
-               onClick={useHint}
-               disabled={hintsLeft <= 0}
-               className={`
-                 flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition shadow-sm
-                 ${hintsLeft > 0 ? 'bg-orange-50 text-orange-500 hover:bg-orange-100' : 'bg-gray-50 text-gray-300 cursor-not-allowed'}
-               `}
-             >
-               <Lightbulb size={18} />
-               提示 ({hintsLeft})
-             </button>
            </div>
         )}
 

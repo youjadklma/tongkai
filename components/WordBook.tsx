@@ -110,7 +110,7 @@ const WordBook: React.FC<WordBookProps> = ({ words, onBack, onDelete, onPlayAudi
         {isSelectionMode && (
              <div className="text-xs text-cute-blue px-2 flex items-center gap-1 font-bold">
                 <AlertCircle size={12} />
-                <span>请选择1-20个单词开始听写</span>
+                <span>请选择 1 ~ 20 个单词开始复习听写</span>
             </div>
         )}
       </div>
